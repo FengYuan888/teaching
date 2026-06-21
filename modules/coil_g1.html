@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>載流圓形線圈磁場 3D 模擬器 (含座標與電流標註)</title>
+    <style>
+        body { 
+            margin: 0; padding: 0; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            height: 100vh; display: flex; overflow: hidden; 
+            background: #111;
+        }
+        #app-container { display: flex; width: 100%; height: 100%; }
+        
+        /* === 控制面板樣式 (左側) === */
+        #controls {
+            width: 320px;
+            background: #f8f9fa;
+            padding: 20px;
+            border-right: 1px solid #dee2e6;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+            box-sizing: border-box;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.1);
+            z-index: 10;
+        }
+        #controls h2 { margin-top: 0; color: #212529; font-size: 1.4rem; border-bottom: 2px solid #ccc; padding-bottom: 10px;}
+        .control-group { display: flex; flex-direction: column; gap: 8px; }
+        .control-group label { font-weight: bold; color: #495057; font-size: 0.95rem; }
+        .value-display { font-size: 1em; color: #d9534f; font-weight: bold; margin-left: 5px; }
+        input[type="range"] { width: 100%; cursor: pointer; }
+        select { padding: 8px; width: 100%; border-radius: 4px; border: 1px solid #ced4da; cursor: pointer; }
+        
+        /* 指南針開關樣式 */
+        .compass-toggle {
+            background: #e8f5e9;
+            padding: 15px 12px;
+            border-radius: 8px;
+            border: 1px solid #a5d6a7;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .compass-toggle:hover { background: #c8e6c9; }
+        .compass-toggle input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
+        
+        /* 新增：指南針模式切換樣式 */
+        #compassModeGroup {
+            background: #ffffff;
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px dashed #a5d6a7;
+            font-size: 0.9em;
+            display: none; /* 預設隱藏 */
+            flex-direction: column;
+            gap: 5px;
+        }
+        #compassModeGroup label {
+            cursor: pointer;
+            color: #333;
+            font-weight: normal;
+        }
+
+        .hints { font-size: 0.8em; color: #666; background: #e9ecef; padding: 10px; border-radius: 6px; line-height: 1.5; }
+
+        /* === 3D 渲染區域樣式 (右側) === */
+        #canvas-container {
+            flex-grow: 1;
+            position: relative;
+            background: #000;
+        }
+        #canvas-container.compass-active { cursor: crosshair; }
+        
+        /* 數值浮動提示框 */
+        #tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.85);
+            color: #00ffcc;
+            padding: 10px 15px;
+            border-radius: 6px;
+            border: 1px solid #00ffcc;
+            display: none;
+            pointer-events: none;
+            font-size: 14px;
+            z-index: 100;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            white-space: nowrap;
+        }
+
+        /* 模擬操作指引樣式 */
+        #instruction-guide {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            z-index: 110;
+            width: 250px;
+            box-sizing: border-box;
+            pointer-events: none; /* 防止遮擋滑鼠事件 */
+        }
+        #instruction-guide h3 { margin-top: 0; margin-bottom: 10px; font-size: 1rem; }
+        #instruction-guide ol { padding-left: 20px; margin: 0; }
+        #instruction-guide li { font-size: 0.9rem; margin-bottom: 8px; }
+        #instruction-guide li:last-child { margin-bottom: 0; }
+
+        /* === 響應式設計 === */
+        @media (max-width: 768px) {
+            #app-container { flex-direction: column; }
+            #controls { width: 100%; height: auto; max-height: 45vh; border-right: none; border-bottom: 2px solid #ccc; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="app-container">
+        <div id="controls">
+            <h2>載流線圈磁場模擬</h2>
+            
+            <div class="control-group">
+                <label for="currentSlider">電流大小 \(I\)</label>
+                <div>
+                    <input type="range" id="currentSlider" min="0" max="10" step="0.1" value="5">
+                    <span id="currentVal" class="value-display">5.0</span> A
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label for="coilsSlider">線圈數量 \(N\)</label>
+                <div>
+                    <input type="range" id="coilsSlider" min="1" max="5" step="1" value="2">
+                    <span id="coilsVal" class="value-display">2</span> 圈
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label for="radiusSlider">線圈半徑 \(R\)</label>
+                <div>
+                    <input type="range" id="radiusSlider" min="10" max="50" step="1" value="20">
+                    <span id="radiusVal" class="value-display">20</span> cm
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label for="displayMode">全域磁場顯示模式</label>
+                <select id="displayMode">
+                    <option value="planeVectors">平面向量場 (XZ 剖面)</option>
+                    <option value="grid3dVectors">立體空間向量場 (稀疏網格)</option>
+                    <option value="hide">隱藏全域磁場</option>
+                </select>
+            </div>
+
+            <label class="compass-toggle">
+                <input type="checkbox" id="compassToggle">
+                <span style="font-weight: bold; color: #2e7d32;">即時指南針 (XZ 平面)</span>
+            </label>
+
+            <div id="compassModeGroup">
+                <span style="font-weight:bold; color:#2e7d32; margin-bottom: 4px;">設定紅色端指向：</span>
+                <label><input type="radio" name="compassMode" value="N" checked> 指北針 (N極, 順磁場方向)</label>
+                <label><input type="radio" name="compassMode" value="S"> 指南針 (S極, 逆磁場方向)</label>
+            </div>
+
+            <div class="hints">
+                <b>操作提示：</b><br>
+                • 黃色箭頭標示線圈<b>電流方向</b><br>
+                • 拖曳左鍵：旋轉視角<br>
+                • 拖曳右鍵：平移視角<br>
+                • 滾輪：縮放畫面<br>
+                • 左鍵點擊畫布：顯示局部數值
+            </div>
+        </div>
+
+        <div id="canvas-container">
+            <div id="tooltip"></div>
+            <div id="instruction-guide">
+                <h3>模擬操作指引步驟：</h3>
+                <ol>
+                    <li>調整電流大小 觀察箭頭磁場的大小</li>
+                    <li>調整線圈數量 觀察磁場的大小變化</li>
+                    <li>調整線圈半徑 觀察磁場的變化</li>
+                    <li>按下左鍵拖曳 以各個不同角度觀察磁場的方向</li>
+                    <li>開啟即時指針 觀察各個不同位置的磁場變化關係</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.156.1/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.156.1/examples/jsm/"
+      }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // ================= 1. 全域變數與參數 =================
+        let scene, camera, renderer, controls, tooltip;
+        let coilsGroup, fieldGroup, axesGroup;
+        let customCompass = null; // 替換為自訂的 3D 雙色指針
+        
+        const M_0 = 4 * Math.PI * 1e-7; // 真空磁導率 μ₀ (T·m/A)
+
+        const params = {
+            current: 5,         // 電流 (A)
+            coils: 2,           // 圈數
+            radius: 0.2,        // 半徑 (m)
+            displayMode: 'planeVectors',
+            compassActive: false,
+            compassMode: 'N',   // 'N' (指北) 或 'S' (指南)
+            planeSize: 1.2,     // 觀測區域大小
+            gridSegments: 14,   // 向量網格密度
+            separation: 0.03    // 線圈緊密排列間距 (m)
+        };
+
+        // 滑鼠與 Raycaster 設定
+        const raycaster = new THREE.Raycaster();
+        const mouse2D = new THREE.Vector2();
+        const planeXZ = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // XZ 基準面 (Y=0)
+        let lastMousePos = null;
+
+        // ================= 2. 初始化場景 =================
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x111111);
+
+            const container = document.getElementById('canvas-container');
+            camera = new THREE.PerspectiveCamera(55, container.offsetWidth / container.offsetHeight, 0.01, 100);
+            camera.position.set(1.2, 0.8, 1.2); 
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.offsetWidth, container.offsetHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            coilsGroup = new THREE.Group();
+            fieldGroup = new THREE.Group();
+            axesGroup = new THREE.Group();
+            scene.add(coilsGroup, fieldGroup, axesGroup);
+
+            tooltip = document.getElementById('tooltip');
+
+            // 環境光與平行光
+            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+            dirLight.position.set(2, 5, 2);
+            scene.add(dirLight);
+
+            setupAxes(); // 設置座標軸與文字
+            setupEventListeners();
+            rebuildScene();
+            animate();
+        }
+
+        // ================= 3. 座標軸與文字標註 =================
+        function setupAxes() {
+            // 基礎座標軸線 (紅=X, 綠=Y, 藍=Z)
+            const axesHelper = new THREE.AxesHelper(0.4);
+            axesGroup.add(axesHelper);
+
+            // 輔助網格 (XZ平面)
+            const gridHelper = new THREE.GridHelper(2.5, 25, 0x444444, 0x222222);
+            axesGroup.add(gridHelper);
+
+            // 建立 3D 文字 Sprite 標籤
+            function createLabelSprite(text, color) {
+                const canvas = document.createElement('canvas');
+                canvas.width = 128; canvas.height = 128;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = color;
+                ctx.font = 'bold 80px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(text, 64, 64);
+                
+                const texture = new THREE.CanvasTexture(canvas);
+                const spriteMat = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+                const sprite = new THREE.Sprite(spriteMat);
+                sprite.scale.set(0.12, 0.12, 0.12); // 調整文字大小
+                return sprite;
+            }
+
+            const labelX = createLabelSprite('X', '#ff4444'); labelX.position.set(0.45, 0, 0);
+            const labelY = createLabelSprite('Y', '#44ff44'); labelY.position.set(0, 0.45, 0);
+            const labelZ = createLabelSprite('Z', '#4444ff'); labelZ.position.set(0, 0, 0.45);
+            axesGroup.add(labelX, labelY, labelZ);
+        }
+
+        // ================= 自訂 3D 雙色指針建構 =================
+        function createCompassObject() {
+            const group = new THREE.Group();
+            
+            // N極端 (紅色圓錐)
+            const nGeo = new THREE.ConeGeometry(0.015, 0.08, 16);
+            // 使用 Phong 材質讓它對光線有反應，更有立體感
+            const nMat = new THREE.MeshPhongMaterial({ color: 0xff1111, shininess: 80 }); 
+            const nMesh = new THREE.Mesh(nGeo, nMat);
+            nMesh.position.y = 0.04; // 向上偏移一半高度
+            
+            // S極端 (白灰色圓錐)
+            const sGeo = new THREE.ConeGeometry(0.015, 0.08, 16);
+            const sMat = new THREE.MeshPhongMaterial({ color: 0xe0e0e0, shininess: 80 });
+            const sMesh = new THREE.Mesh(sGeo, sMat);
+            sMesh.rotation.x = Math.PI; // 旋轉 180 度朝下
+            sMesh.position.y = -0.04;
+            
+            group.add(nMesh);
+            group.add(sMesh);
+            
+            // 預設時，紅色圓錐朝向 +Y 軸
+            return group;
+        }
+
+        // ================= 4. 核心物理運算 (Biot-Savart Law) =================
+        function calculateBFromSingleCoil(pointP, R, I, zCoil) {
+            let totalB = new THREE.Vector3(0, 0, 0);
+            const segments = 100; // 數值積分切割數
+            const dTheta = (2 * Math.PI) / segments;
+
+            for (let i = 0; i < segments; i++) {
+                const theta = i * dTheta;
+                const thetaNext = (i + 1) * dTheta;
+
+                const dL_pos = new THREE.Vector3(R * Math.cos(theta), R * Math.sin(theta), zCoil);
+                const dL_pos_next = new THREE.Vector3(R * Math.cos(thetaNext), R * Math.sin(thetaNext), zCoil);
+
+                const dL = new THREE.Vector3().subVectors(dL_pos_next, dL_pos);
+                const rVec = new THREE.Vector3().subVectors(pointP, dL_pos);
+                
+                if (rVec.lengthSq() < 0.0001) continue; 
+
+                const rHat = rVec.clone().normalize();
+                const dCross = new THREE.Vector3().crossVectors(dL, rHat);
+                const dBScale = (M_0 * I) / (4 * Math.PI * rVec.lengthSq());
+                const dB = dCross.multiplyScalar(dBScale);
+
+                totalB.add(dB);
+            }
+            return totalB;
+        }
+
+        function calculateTotalB(pointP) {
+            let totalB = new THREE.Vector3(0, 0, 0);
+            const zStart = - (params.coils - 1) * params.separation / 2;
+
+            for (let i = 0; i < params.coils; i++) {
+                const zCoil = zStart + i * params.separation;
+                totalB.add(calculateBFromSingleCoil(pointP, params.radius, params.current, zCoil));
+            }
+            return totalB;
+        }
+
+        // ================= 5. 視覺化建構 =================
+        function updateUI() {
+            document.getElementById('currentVal').innerText = params.current.toFixed(1);
+            document.getElementById('coilsVal').innerText = params.coils;
+            document.getElementById('radiusVal').innerText = Math.round(params.radius * 100);
+        }
+
+        function rebuildScene() {
+            updateUI();
+            
+            // --- 繪製線圈與電流方向箭頭 ---
+            coilsGroup.clear();
+            const zStart = - (params.coils - 1) * params.separation / 2;
+            const copperMat = new THREE.MeshStandardMaterial({ color: 0xc86432, metalness: 0.8, roughness: 0.2 });
+
+            for (let i = 0; i < params.coils; i++) {
+                const zPos = zStart + i * params.separation;
+                
+                const geo = new THREE.TorusGeometry(params.radius, 0.006, 16, 100);
+                const torus = new THREE.Mesh(geo, copperMat);
+                torus.position.z = zPos;
+                coilsGroup.add(torus);
+
+                if (params.current > 0) {
+                    const dir = new THREE.Vector3(-1, 0, 0);
+                    const origin = new THREE.Vector3(0, params.radius, zPos);
+                    const currentArrow = new THREE.ArrowHelper(dir, origin, 0.08, 0xffff00, 0.035, 0.03);
+                    coilsGroup.add(currentArrow);
+                }
+            }
+
+            // --- 繪製全域向量場 ---
+            fieldGroup.clear();
+            if (params.displayMode === 'hide') return;
+            if (params.displayMode === 'planeVectors') createXZPlaneVectors();
+            if (params.displayMode === 'grid3dVectors') createGrid3dVectors();
+        }
+
+        function createXZPlaneVectors() {
+            const step = (params.planeSize * 2) / params.gridSegments;
+            const refMag = 5e-7; 
+
+            for (let x = -params.planeSize; x <= params.planeSize; x += step) {
+                for (let z = -params.planeSize; z <= params.planeSize; z += step) {
+                    const pt = new THREE.Vector3(x, 0, z); 
+                    const B = calculateTotalB(pt);
+                    if (B.lengthSq() > 1e-18) addVectorArrow(pt, B, refMag, 0.15);
+                }
+            }
+        }
+
+        function createGrid3dVectors() {
+            const size = 0.5;
+            const step = (size * 2) / 6;
+            const refMag = 8e-7;
+
+            for (let x = -size; x <= size; x += step) {
+                for (let y = -size; y <= size; y += step) {
+                    for (let z = -size; z <= size; z += step) {
+                        const pt = new THREE.Vector3(x, y, z);
+                        const B = calculateTotalB(pt);
+                        if (B.lengthSq() > 1e-18) addVectorArrow(pt, B, refMag, 0.12);
+                    }
+                }
+            }
+        }
+
+        function addVectorArrow(point, BVector, refBMag, maxLen) {
+            const mag = BVector.length();
+            const dir = BVector.normalize();
+
+            let len = Math.sqrt(mag / refBMag) * maxLen * 0.4;
+            len = Math.min(maxLen, len);
+            if (len > 5) return; 
+
+            const colorScale = Math.min(1, Math.sqrt(mag / refBMag) / 1.5);
+            const hue = 0.66 * (1 - colorScale); 
+            const color = new THREE.Color().setHSL(hue, 1, 0.5);
+
+            const arrow = new THREE.ArrowHelper(dir, point, len, color.getHex(), len * 0.2, len * 0.15);
+            fieldGroup.add(arrow);
+        }
+
+        // ================= 6. 互動與事件 =================
+        function setupEventListeners() {
+            ['currentSlider', 'coilsSlider', 'radiusSlider'].forEach(id => {
+                document.getElementById(id).addEventListener('input', (e) => {
+                    params[id.replace('Slider', '')] = parseFloat(e.target.value) / (id === 'radiusSlider'Here is the modified HTML code with the instruction guide added to the upper right corner of the 3D rendering area.
+
+```html
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>載流圓形線圈磁場 3D 模擬器 (含座標與電流標註)</title>
+    <style>
+        body { 
+            margin: 0; padding: 0; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            height: 100vh; display: flex; overflow: hidden; 
+            background: #111;
+        }
+        #app-container { display: flex; width: 100%; height: 100%; }
+        
+        /* === 控制面板樣式 (左側) === */
+        #controls {
+            width: 320px;
+            background: #f8f9fa;
+            padding: 20px;
+            border-right: 1px solid #dee2e6;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+            box-sizing: border-box;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.1);
+            z-index: 10;
+        }
+        #controls h2 { margin-top: 0; color: #212529; font-size: 1.4rem; border-bottom: 2px solid #ccc; padding-bottom: 10px;}
+        .control-group { display: flex; flex-direction: column; gap: 8px; }
+        .control-group label { font-weight: bold; color: #495057; font-size: 0.95rem; }
+        .value-display { font-size: 1em; color: #d9534f; font-weight: bold; margin-left: 5px; }
+        input[type="range"] { width: 100%; cursor: pointer; }
+        select { padding: 8px; width: 100%; border-radius: 4px; border: 1px solid #ced4da; cursor: pointer; }
+        
+        /* 指南針開關樣式 */
+        .compass-toggle {
+            background: #e8f5e9;
+            padding: 15px 12px;
+            border-radius: 8px;
+            border: 1px solid #a5d6a7;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .compass-toggle:hover { background: #c8e6c9; }
+        .compass-toggle input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
+        
+        /* 新增：指南針模式切換樣式 */
+        #compassModeGroup {
+            background: #ffffff;
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px dashed #a5d6a7;
+            font-size: 0.9em;
+            display: none; /* 預設隱藏 */
+            flex-direction: column;
+            gap: 5px;
+        }
+        #compassModeGroup label {
+            cursor: pointer;
+            color: #333;
+            font-weight: normal;
+        }
+
+        .hints { font-size: 0.8em; color: #666; background: #e9ecef; padding: 10px; border-radius: 6px; line-height: 1.5; }
+
+        /* === 3D 渲染區域樣式 (右側) === */
+        #canvas-container {
+            flex-grow: 1;
+            position: relative;
+            background: #000;
+        }
+        #canvas-container.compass-active { cursor: crosshair; }
+        
+        /* 數值浮動提示框 */
+        #tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.85);
+            color: #00ffcc;
+            padding: 10px 15px;
+            border-radius: 6px;
+            border: 1px solid #00ffcc;
+            display: none;
+            pointer-events: none;
+            font-size: 14px;
+            z-index: 100;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            white-space: nowrap;
+        }
+
+        /* 模擬操作指引樣式 */
+        #instruction-guide {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            z-index: 110;
+            width: 250px;
+            box-sizing: border-box;
+            pointer-events: none; /* 防止遮擋滑鼠事件 */
+        }
+        #instruction-guide h3 { margin-top: 0; margin-bottom: 10px; font-size: 1rem; }
+        #instruction-guide ol { padding-left: 20px; margin: 0; }
+        #instruction-guide li { font-size: 0.9rem; margin-bottom: 8px; }
+        #instruction-guide li:last-child { margin-bottom: 0; }
+
+        /* === 響應式設計 === */
+        @media (max-width: 768px) {
+            #app-container { flex-direction: column; }
+            #controls { width: 100%; height: auto; max-height: 45vh; border-right: none; border-bottom: 2px solid #ccc; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="app-container">
+        <div id="controls">
+            <h2>載流線圈磁場模擬</h2>
+            
+            <div class="control-group">
+                <label for="currentSlider">電流大小 \(I\)</label>
+                <div>
+                    <input type="range" id="currentSlider" min="0" max="10" step="0.1" value="5">
+                    <span id="currentVal" class="value-display">5.0</span> A
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label for="coilsSlider">線圈數量 \(N\)</label>
+                <div>
+                    <input type="range" id="coilsSlider" min="1" max="5" step="1" value="2">
+                    <span id="coilsVal" class="value-display">2</span> 圈
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label for="radiusSlider">線圈半徑 \(R\)</label>
+                <div>
+                    <input type="range" id="radiusSlider" min="10" max="50" step="1" value="20">
+                    <span id="radiusVal" class="value-display">20</span> cm
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label for="displayMode">全域磁場顯示模式</label>
+                <select id="displayMode">
+                    <option value="planeVectors">平面向量場 (XZ 剖面)</option>
+                    <option value="grid3dVectors">立體空間向量場 (稀疏網格)</option>
+                    <option value="hide">隱藏全域磁場</option>
+                </select>
+            </div>
+
+            <label class="compass-toggle">
+                <input type="checkbox" id="compassToggle">
+                <span style="font-weight: bold; color: #2e7d32;">即時指南針 (XZ 平面)</span>
+            </label>
+
+            <div id="compassModeGroup">
+                <span style="font-weight:bold; color:#2e7d32; margin-bottom: 4px;">設定紅色端指向：</span>
+                <label><input type="radio" name="compassMode" value="N" checked> 指北針 (N極, 順磁場方向)</label>
+                <label><input type="radio" name="compassMode" value="S"> 指南針 (S極, 逆磁場方向)</label>
+            </div>
+
+            <div class="hints">
+                <b>操作提示：</b><br>
+                • 黃色箭頭標示線圈<b>電流方向</b><br>
+                • 拖曳左鍵：旋轉視角<br>
+                • 拖曳右鍵：平移視角<br>
+                • 滾輪：縮放畫面<br>
+                • 左鍵點擊畫布：顯示局部數值
+            </div>
+        </div>
+
+        <div id="canvas-container">
+            <div id="tooltip"></div>
+            <div id="instruction-guide">
+                <h3>模擬操作指引步驟：</h3>
+                <ol>
+                    <li>調整電流大小 觀察箭頭磁場的大小</li>
+                    <li>調整線圈數量 觀察磁場的大小變化</li>
+                    <li>調整線圈半徑 觀察磁場的變化</li>
+                    <li>按下左鍵拖曳 以各個不同角度觀察磁場的方向</li>
+                    <li>開啟即時指針 觀察各個不同位置的磁場變化關係</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <script async src="[https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js](https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js)"></script>
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "[https://unpkg.com/three@0.156.1/build/three.module.js](https://unpkg.com/three@0.156.1/build/three.module.js)",
+        "three/addons/": "[https://unpkg.com/three@0.156.1/examples/jsm/](https://unpkg.com/three@0.156.1/examples/jsm/)"
+      }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // ================= 1. 全域變數與參數 =================
+        let scene, camera, renderer, controls, tooltip;
+        let coilsGroup, fieldGroup, axesGroup;
+        let customCompass = null; // 替換為自訂的 3D 雙色指針
+        
+        const M_0 = 4 * Math.PI * 1e-7; // 真空磁導率 μ₀ (T·m/A)
+
+        const params = {
+            current: 5,         // 電流 (A)
+            coils: 2,           // 圈數
+            radius: 0.2,        // 半徑 (m)
+            displayMode: 'planeVectors',
+            compassActive: false,
+            compassMode: 'N',   // 'N' (指北) 或 'S' (指南)
+            planeSize: 1.2,     // 觀測區域大小
+            gridSegments: 14,   // 向量網格密度
+            separation: 0.03    // 線圈緊密排列間距 (m)
+        };
+
+        // 滑鼠與 Raycaster 設定
+        const raycaster = new THREE.Raycaster();
+        const mouse2D = new THREE.Vector2();
+        const planeXZ = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // XZ 基準面 (Y=0)
+        let lastMousePos = null;
+
+        // ================= 2. 初始化場景 =================
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x111111);
+
+            const container = document.getElementById('canvas-container');
+            camera = new THREE.PerspectiveCamera(55, container.offsetWidth / container.offsetHeight, 0.01, 100);
+            camera.position.set(1.2, 0.8, 1.2); 
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.offsetWidth, container.offsetHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            coilsGroup = new THREE.Group();
+            fieldGroup = new THREE.Group();
+            axesGroup = new THREE.Group();
+            scene.add(coilsGroup, fieldGroup, axesGroup);
+
+            tooltip = document.getElementById('tooltip');
+
+            // 環境光與平行光
+            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+            dirLight.position.set(2, 5, 2);
+            scene.add(dirLight);
+
+            setupAxes(); // 設置座標軸與文字
+            setupEventListeners();
+            rebuildScene();
+            animate();
+        }
+
+        // ================= 3. 座標軸與文字標註 =================
+        function setupAxes() {
+            // 基礎座標軸線 (紅=X, 綠=Y, 藍=Z)
+            const axesHelper = new THREE.AxesHelper(0.4);
+            axesGroup.add(axesHelper);
+
+            // 輔助網格 (XZ平面)
+            const gridHelper = new THREE.GridHelper(2.5, 25, 0x444444, 0x222222);
+            axesGroup.add(gridHelper);
+
+            // 建立 3D 文字 Sprite 標籤
+            function createLabelSprite(text, color) {
+                const canvas = document.createElement('canvas');
+                canvas.width = 128; canvas.height = 128;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = color;
+                ctx.font = 'bold 80px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(text, 64, 64);
+                
+                const texture = new THREE.CanvasTexture(canvas);
+                const spriteMat = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+                const sprite = new THREE.Sprite(spriteMat);
+                sprite.scale.set(0.12, 0.12, 0.12); // 調整文字大小
+                return sprite;
+            }
+
+            const labelX = createLabelSprite('X', '#ff4444'); labelX.position.set(0.45, 0, 0);
+            const labelY = createLabelSprite('Y', '#44ff44'); labelY.position.set(0, 0.45, 0);
+            const labelZ = createLabelSprite('Z', '#4444ff'); labelZ.position.set(0, 0, 0.45);
+            axesGroup.add(labelX, labelY, labelZ);
+        }
+
+        // ================= 自訂 3D 雙色指針建構 =================
+        function createCompassObject() {
+            const group = new THREE.Group();
+            
+            // N極端 (紅色圓錐)
+            const nGeo = new THREE.ConeGeometry(0.015, 0.08, 16);
+            // 使用 Phong 材質讓它對光線有反應，更有立體感
+            const nMat = new THREE.MeshPhongMaterial({ color: 0xff1111, shininess: 80 }); 
+            const nMesh = new THREE.Mesh(nGeo, nMat);
+            nMesh.position.y = 0.04; // 向上偏移一半高度
+            
+            // S極端 (白灰色圓錐)
+            const sGeo = new THREE.ConeGeometry(0.015, 0.08, 16);
+            const sMat = new THREE.MeshPhongMaterial({ color: 0xe0e0e0, shininess: 80 });
+            const sMesh = new THREE.Mesh(sGeo, sMat);
+            sMesh.rotation.x = Math.PI; // 旋轉 180 度朝下
+            sMesh.position.y = -0.04;
+            
+            group.add(nMesh);
+            group.add(sMesh);
+            
+            // 預設時，紅色圓錐朝向 +Y 軸
+            return group;
+        }
+
+        // ================= 4. 核心物理運算 (Biot-Savart Law) =================
+        function calculateBFromSingleCoil(pointP, R, I, zCoil) {
+            let totalB = new THREE.Vector3(0, 0, 0);
+            const segments = 100; // 數值積分切割數
+            const dTheta = (2 * Math.PI) / segments;
+
+            for (let i = 0; i < segments; i++) {
+                const theta = i * dTheta;
+                const thetaNext = (i + 1) * dTheta;
+
+                const dL_pos = new THREE.Vector3(R * Math.cos(theta), R * Math.sin(theta), zCoil);
+                const dL_pos_next = new THREE.Vector3(R * Math.cos(thetaNext), R * Math.sin(thetaNext), zCoil);
+
+                const dL = new THREE.Vector3().subVectors(dL_pos_next, dL_pos);
+                const rVec = new THREE.Vector3().subVectors(pointP, dL_pos);
+                
+                if (rVec.lengthSq() < 0.0001) continue; 
+
+                const rHat = rVec.clone().normalize();
+                const dCross = new THREE.Vector3().crossVectors(dL, rHat);
+                const dBScale = (M_0 * I) / (4 * Math.PI * rVec.lengthSq());
+                const dB = dCross.multiplyScalar(dBScale);
+
+                totalB.add(dB);
+            }
+            return totalB;
+        }
+
+        function calculateTotalB(pointP) {
+            let totalB = new THREE.Vector3(0, 0, 0);
+            const zStart = - (params.coils - 1) * params.separation / 2;
+
+            for (let i = 0; i < params.coils; i++) {
+                const zCoil = zStart + i * params.separation;
+                totalB.add(calculateBFromSingleCoil(pointP, params.radius, params.current, zCoil));
+            }
+            return totalB;
+        }
+
+        // ================= 5. 視覺化建構 =================
+        function updateUI() {
+            document.getElementById('currentVal').innerText = params.current.toFixed(1);
+            document.getElementById('coilsVal').innerText = params.coils;
+            document.getElementById('radiusVal').innerText = Math.round(params.radius * 100);
+        }
+
+        function rebuildScene() {
+            updateUI();
+            
+            // --- 繪製線圈與電流方向箭頭 ---
+            coilsGroup.clear();
+            const zStart = - (params.coils - 1) * params.separation / 2;
+            const copperMat = new THREE.MeshStandardMaterial({ color: 0xc86432, metalness: 0.8, roughness: 0.2 });
+
+            for (let i = 0; i < params.coils; i++) {
+                const zPos = zStart + i * params.separation;
+                
+                const geo = new THREE.TorusGeometry(params.radius, 0.006, 16, 100);
+                const torus = new THREE.Mesh(geo, copperMat);
+                torus.position.z = zPos;
+                coilsGroup.add(torus);
+
+                if (params.current > 0) {
+                    const dir = new THREE.Vector3(-1, 0, 0);
+                    const origin = new THREE.Vector3(0, params.radius, zPos);
+                    const currentArrow = new THREE.ArrowHelper(dir, origin, 0.08, 0xffff00, 0.035, 0.03);
+                    coilsGroup.add(currentArrow);
+                }
+            }
+
+            // --- 繪製全域向量場 ---
+            fieldGroup.clear();
+            if (params.displayMode === 'hide') return;
+            if (params.displayMode === 'planeVectors') createXZPlaneVectors();
+            if (params.displayMode === 'grid3dVectors') createGrid3dVectors();
+        }
+
+        function createXZPlaneVectors() {
+            const step = (params.planeSize * 2) / params.gridSegments;
+            const refMag = 5e-7; 
+
+            for (let x = -params.planeSize; x <= params.planeSize; x += step) {
+                for (let z = -params.planeSize; z <= params.planeSize; z += step) {
+                    const pt = new THREE.Vector3(x, 0, z); 
+                    const B = calculateTotalB(pt);
+                    if (B.lengthSq() > 1e-18) addVectorArrow(pt, B, refMag, 0.15);
+                }
+            }
+        }
+
+        function createGrid3dVectors() {
+            const size = 0.5;
+            const step = (size * 2) / 6;
+            const refMag = 8e-7;
+
+            for (let x = -size; x <= size; x += step) {
+                for (let y = -size; y <= size; y += step) {
+                    for (let z = -size; z <= size; z += step) {
+                        const pt = new THREE.Vector3(x, y, z);
+                        const B = calculateTotalB(pt);
+                        if (B.lengthSq() > 1e-18) addVectorArrow(pt, B, refMag, 0.12);
+                    }
+                }
+            }
+        }
+
+        function addVectorArrow(point, BVector, refBMag, maxLen) {
+            const mag = BVector.length();
+            const dir = BVector.normalize();
+
+            let len = Math.sqrt(mag / refBMag) * maxLen * 0.4;
+            len = Math.min(maxLen, len);
+            if (len > 5) return; 
+
+            const colorScale = Math.min(1, Math.sqrt(mag / refBMag) / 1.5);
+            const hue = 0.66 * (1 - colorScale); 
+            const color = new THREE.Color().setHSL(hue, 1, 0.5);
+
+            const arrow = new THREE.ArrowHelper(dir, point, len, color.getHex(), len * 0.2, len * 0.15);
+            fieldGroup.add(arrow);
+        }
+
+        // ================= 6. 互動與事件 =================
+        function setupEventListeners() {
+            ['currentSlider', 'coilsSlider', 'radiusSlider'].forEach(id => {
+                document.getElementById(id).addEventListener('input', (e) => {
+                    params[id.replace('Slider', '')] = parseFloat(e.target.value) / (id === 'radiusSlider' ? 100 : 1);
+                    rebuildScene();
+                    updateCompass(); 
+                });
+            });
+
+            document.getElementById('displayMode').addEventListener('change', (e) => {
+                params.displayMode = e.target.value;
+                rebuildScene();
+            });
+
+            const cvsContainer = document.getElementById('canvas-container');
+            const compassModeGroup = document.getElementById('compassModeGroup');
+            
+            // 指南針開關
+            document.getElementById('compassToggle').addEventListener('change', (e) => {
+                params.compassActive = e.target.checked;
+                cvsContainer.classList.toggle('compass-active', params.compassActive);
+                
+                // 顯示或隱藏模式選擇區塊
+                compassModeGroup.style.display = params.compassActive ? 'flex' : 'none';
+                
+                if (!params.compassActive && customCompass) customCompass.visible = false;
+                if (params.compassActive && lastMousePos) updateCompass();
+            });
+
+            // 指北/指南選擇監聽
+            document.querySelectorAll('input[name="compassMode"]').forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    params.compassMode = e.target.value;
+                    if (params.compassActive && lastMousePos) updateCompass();
+                });
+            });
+
+            renderer.domElement.addEventListener('mousemove', onMouseMove);
+            renderer.domElement.addEventListener('click', onMouseClick);
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function getMouseIntersection(event) {
+            const rect = renderer.domElement.getBoundingClientRect();
+            mouse2D.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse2D.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            
+            raycaster.setFromCamera(mouse2D, camera);
+            const target = new THREE.Vector3();
+            raycaster.ray.intersectPlane(planeXZ, target);
+            return target;
+        }
+
+        function onMouseMove(event) {
+            lastMousePos = getMouseIntersection(event);
+            if (params.compassActive && lastMousePos) updateCompass();
+        }
+
+        // 更新自訂指針狀態
+        function updateCompass() {
+            if (!params.compassActive || !lastMousePos) return;
+            
+            const B = calculateTotalB(lastMousePos);
+            if (B.lengthSq() > 1e-20) {
+                if (!customCompass) {
+                    customCompass = createCompassObject();
+                    scene.add(customCompass);
+                }
+                customCompass.visible = true;
+                customCompass.position.copy(lastMousePos);
+                
+                let dir = B.clone().normalize();
+                
+                // 如果選擇指南針(S極)，紅色端要指向磁場反方向
+                if (params.compassMode === 'S') {
+                    dir.negate();
+                }
+                
+                // 由於我們建構模型時，紅色端是朝向 +Y 軸，因此使用四元數將 +Y 旋轉至 dir 方向
+                const up = new THREE.Vector3(0, 1, 0);
+                customCompass.quaternion.setFromUnitVectors(up, dir);
+                
+                // 根據磁場強度稍微縮放指針大小 (選用)
+                const mag = B.length();
+                const scaleLen = Math.max(1, Math.min(3, Math.sqrt(mag / 5e-7) * 1.5));
+                customCompass.scale.set(scaleLen, scaleLen, scaleLen);
+            }
+        }
+
+        function onMouseClick(event) {
+            const pt = getMouseIntersection(event);
+            if (pt) {
+                const B = calculateTotalB(pt);
+                const bMag_uT = (B.length() * 1e6).toFixed(3); 
+
+                tooltip.style.display = 'block';
+                tooltip.style.left = `${event.clientX + 15}px`;
+                tooltip.style.top = `${event.clientY - 15}px`;
+                tooltip.innerHTML = `位置: (X: ${pt.x.toFixed(2)}, Y: ${pt.y.toFixed(2)}, Z: ${pt.z.toFixed(2)})<br>磁場大小: <b>${bMag_uT} μT</b>`;
+
+                setTimeout(() => tooltip.style.display = 'none', 2500);
+            }
+        }
+
+        function onWindowResize() {
+            const container = document.getElementById('canvas-container');
+            camera.aspect = container.offsetWidth / container.offsetHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.offsetWidth, container.offsetHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update(); 
+            renderer.render(scene, camera);
+        }
+
+        init();
+    </script>
+</body>
+</html>

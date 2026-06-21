@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>長直導線磁場 3D 物理模擬</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #121212;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #eee;
+        }
+        canvas {
+            display: block;
+        }
+        /* 控制面板與指引面板通用樣式基底 */
+        .panel-base {
+            position: absolute;
+            background: rgba(30, 30, 30, 0.85);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid #444;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.6);
+            backdrop-filter: blur(8px);
+            user-select: none;
+            z-index: 100;
+        }
+
+        /* 左側控制面板 */
+        #control-panel {
+            top: 20px;
+            left: 20px;
+            width: 320px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        /* 右上角操作指引面板 */
+        #guide-panel {
+            top: 20px;
+            right: 20px;
+            width: 280px;
+            border-color: #ffd700; /* 用金色邊框突顯指引 */
+        }
+
+        h2 {
+            margin-top: 0;
+            font-size: 1.2rem;
+            border-bottom: 1px solid #555;
+            padding-bottom: 10px;
+            color: #4da6ff;
+        }
+
+        #guide-panel h2 {
+            color: #ffd700; /* 指引標題用金色 */
+            border-color: #ffd700;
+        }
+
+        /* 指引步驟清單樣式 */
+        #guide-list {
+            margin: 0;
+            padding-left: 20px;
+            color: #ccc;
+            font-size: 0.95rem;
+            line-height: 1.8;
+        }
+        #guide-list li {
+            margin-bottom: 8px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+            color: #ccc;
+        }
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        input[type="range"] {
+            flex-grow: 1;
+            accent-color: #4da6ff;
+        }
+        .value-display {
+            min-width: 45px;
+            text-align: right;
+            font-weight: bold;
+            color: #ffd700;
+        }
+        select {
+            width: 100%;
+            padding: 6px;
+            background: #222;
+            color: #fff;
+            border: 1px solid #555;
+            border-radius: 4px;
+            margin-top: 5px;
+            cursor: pointer;
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+        .checkbox-group input {
+            cursor: pointer;
+            accent-color: #4da6ff;
+        }
+        /* 數值浮動視窗 (Tooltip) */
+        #tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: #00ffcc;
+            padding: 10px 15px;
+            border-radius: 8px;
+            border: 1px solid #00ffcc;
+            pointer-events: none;
+            display: none;
+            font-size: 0.9rem;
+            z-index: 101; /* 確保在面板之上 */
+            transform: translate(15px, 15px);
+            box-shadow: 0 2px 10px rgba(0,255,204,0.2);
+            line-height: 1.5;
+        }
+        .formula {
+            background: #1a1a1a;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            color: #aaa;
+            margin-top: 15px;
+            border-left: 3px solid #4da6ff;
+            line-height: 1.4;
+        }
+        .instruction {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(30,30,30,0.7);
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            pointer-events: none;
+            color: #aaa;
+            z-index: 90;
+        }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="control-panel" class="panel-base">
+        <h2>導線磁場 3D 模擬器</h2>
+        
+        <div class="control-group">
+            <label>電流大小 (Current, I): <span id="current-val" class="value-display">25 A</span></label>
+            <div class="slider-container">
+                <input type="range" id="current-slider" min="0" max="50" value="25" step="1">
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>電流方向:</label>
+            <select id="current-dir">
+                <option value="1">向上 (+Z 方向)</option>
+                <option value="-1">向下 (-Z 方向)</option>
+            </select>
+        </div>
+
+        <div class="control-group">
+            <label>顯示模式 (Visibility):</label>
+            <label class="checkbox-group">
+                <input type="checkbox" id="show-lines" checked> 磁力線 (同心圓)
+            </label>
+            <label class="checkbox-group">
+                <input type="checkbox" id="show-vec-z0" checked> 向量場箭頭 (Z=0)
+            </label>
+            <label class="checkbox-group">
+                <input type="checkbox" id="show-vec-zall"> 向量場箭頭 (Z=0, Z=1, Z=-1)
+            </label>
+        </div>
+
+        <div class="control-group" style="border-top: 1px solid #555; padding-top: 15px;">
+            <label class="checkbox-group" style="color: #4da6ff; font-weight: bold;">
+                <input type="checkbox" id="interactive-compass"> 開啟即時指針 (滑鼠互動)
+            </label>
+            <label>指針極性:</label>
+            <select id="compass-polarity">
+                <option value="N">指北針 (N極指向磁場方向)</option>
+                <option value="S">指南針 (S極指向磁場反向)</option>
+            </select>
+        </div>
+
+        <div class="formula">
+            <b>物理核心公式：</b><br>
+            安培定律：B = (μ₀·I) / (2π·r)<br>
+            * 距離 (r) 越近，磁場越強 (箭頭長度與顏色變化)<br>
+            * 方向符合安培右手定則 (I × r)
+        </div>
+    </div>
+
+    <div id="guide-panel" class="panel-base">
+        <h2>模擬操作指引步驟：</h2>
+        <ol id="guide-list">
+            <li>調整電流大小 觀察箭頭磁場的大小</li>
+            <li>調整電流方向 觀察磁場的方向變化</li>
+            <li>按下左鍵拖曳 以各個不同角度觀察磁場的方向</li>
+            <li>開啟即時指針 觀察各個不同位置的磁場變化關係</li>
+        </ol>
+    </div>
+
+    <div class="instruction">
+        滑鼠左鍵拖曳：旋轉視角 | 滾輪：縮放 | 右鍵：平移
+    </div>
+
+    <div id="tooltip"></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // ==========================================
+        // 1. 基礎場景、相機與渲染器設定
+        // ==========================================
+        const scene = new THREE.Scene();
+        // 將預設向上方向設為 Z 軸，以符合物理學常見的柱座標設定 (導線在 Z 軸)
+        THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
+        
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(25, -35, 20); // 初始視角
+        camera.lookAt(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        // 加入光源
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(20, 20, 30);
+        scene.add(dirLight);
+
+        // 座標軸輔助 (X=紅, Y=綠, Z=藍)
+        const axesHelper = new THREE.AxesHelper(15);
+        scene.add(axesHelper);
+
+        // ==========================================
+        // 2. 物理參數與狀態變數
+        // ==========================================
+        const MU_0_OVER_2PI = 10; // 模擬用的常數比例 (μ₀/2π)
+        let currentMagnitude = 25;
+        let currentDirection = 1; // 1 (向上) 或 -1 (向下)
+        
+        let showLines = true;
+        let showVecZ0 = true;
+        let showVecZAll = false;
+        let isCompassActive = false;
+        let compassPolarity = 1; // 1 (N極) 或 -1 (S極)
+
+        // ==========================================
+        // 3. 建立視覺物件
+        // ==========================================
+        
+        // --- A. 載流長直導線 (沿 Z 軸) ---
+        const wireMaterial = new THREE.MeshPhongMaterial({ color: 0x88aaff, metalness: 0.6, roughness: 0.2 });
+        const wireGeometry = new THREE.CylinderGeometry(0.4, 0.4, 60, 32);
+        // CylinderGeometry 預設沿 Y 軸，我們將其旋轉至沿 Z 軸
+        wireGeometry.rotateX(Math.PI / 2);
+        const wire = new THREE.Mesh(wireGeometry, wireMaterial);
+        scene.add(wire);
+
+        // 標示電流方向的粗箭頭
+        const currentArrow = new THREE.ArrowHelper(
+            new THREE.Vector3(0, 0, 1), 
+            new THREE.Vector3(0, 0, 0), 
+            15, 0xff3333, 3, 2
+        );
+        scene.add(currentArrow);
+
+        // --- B. 磁力線 (同心圓與箭頭) ---
+        const fieldLinesGroup = new THREE.Group();
+        scene.add(fieldLinesGroup);
+        const fieldArrows = []; // 儲存磁力線上的箭頭以便更新方向
+
+        const radiuses = [4, 8, 12, 16];
+        radiuses.forEach(r => {
+            // 畫同心圓
+            const circleGeom = new THREE.BufferGeometry();
+            const points = [];
+            const segments = 64;
+            for(let i=0; i<=segments; i++) {
+                const theta = (i / segments) * Math.PI * 2;
+                points.push(new THREE.Vector3(r * Math.cos(theta), r * Math.sin(theta), 0));
+            }
+            circleGeom.setFromPoints(points);
+            const circleMat = new THREE.LineBasicMaterial({ color: 0x00ffcc, transparent: true, opacity: 0.4 });
+            const circle = new THREE.Line(circleGeom, circleMat);
+            fieldLinesGroup.add(circle);
+
+            // 在圓圈上加 4 個方向箭頭
+            for(let i=0; i<4; i++) {
+                const theta = (i / 4) * Math.PI * 2;
+                const pos = new THREE.Vector3(r * Math.cos(theta), r * Math.sin(theta), 0);
+                const arrow = new THREE.ArrowHelper(new THREE.Vector3(1,0,0), pos, 2.5, 0x00ffcc, 1, 0.6);
+                fieldArrows.push({ arrow: arrow, theta: theta, r: r });
+                fieldLinesGroup.add(arrow);
+            }
+        });
+
+        // --- C. 向量場 (小箭頭佈滿空間) ---
+        const vectorFieldGroupZ0 = new THREE.Group();
+        const vectorFieldGroupZOther = new THREE.Group();
+        scene.add(vectorFieldGroupZ0);
+        scene.add(vectorFieldGroupZOther);
+        const vectorArrows = []; 
+
+        const gridSize = 16;
+        const spacing = 3.2;
+        // 建立三層: Z=0, 以及代表 Z=1, Z=-1 的上下層 (為了視覺明顯放大 Z 軸間距至 8)
+        const layers = [0, 8, -8];
+
+        layers.forEach(z => {
+            for(let x = -gridSize; x <= gridSize; x += spacing) {
+                for(let y = -gridSize; y <= gridSize; y += spacing) {
+                    const r = Math.sqrt(x*x + y*y);
+                    if (r < 1.5) continue; // 太靠近導線不畫，避免無限大
+
+                    const pos = new THREE.Vector3(x, y, z);
+                    const arrow = new THREE.ArrowHelper(new THREE.Vector3(1,0,0), pos, 1, 0xffffff, 0.4, 0.4);
+                    
+                    vectorArrows.push({ arrow: arrow, x: x, y: y, z: z, r: r });
+                    
+                    if (z === 0) vectorFieldGroupZ0.add(arrow);
+                    else vectorFieldGroupZOther.add(arrow);
+                }
+            }
+        });
+        vectorFieldGroupZOther.visible = false; // 預設關閉 Z=1, Z=-1
+
+        // --- D. 互動式指針 (指北針/指南針) ---
+        const compassGroup = new THREE.Group();
+        compassGroup.visible = false;
+        scene.add(compassGroup);
+        
+        // 組合菱形指針 (由兩個圓錐組成)
+        const nConeGeom = new THREE.ConeGeometry(0.8, 3, 16);
+        nConeGeom.translate(0, 1.5, 0); 
+        const sConeGeom = new THREE.ConeGeometry(0.8, 3, 16);
+        sConeGeom.rotateX(Math.PI);
+        sConeGeom.translate(0, -1.5, 0); 
+        
+        const nMat = new THREE.MeshPhongMaterial({ color: 0xff3333, shininess: 100 }); // N極紅色
+        const sMat = new THREE.MeshPhongMaterial({ color: 0xdddddd, shininess: 100 }); // S極白色
+        
+        const nMesh = new THREE.Mesh(nConeGeom, nMat);
+        const sMesh = new THREE.Mesh(sConeGeom, sMat);
+        compassGroup.add(nMesh);
+        compassGroup.add(sMesh);
+        
+        // 指針底座
+        const compassBase = new THREE.Mesh(
+            new THREE.CylinderGeometry(1.5, 1.5, 0.2, 32),
+            new THREE.MeshBasicMaterial({ color: 0x444444, transparent: true, opacity: 0.6 })
+        );
+        compassBase.rotateX(Math.PI / 2); // 貼平 XY 面
+        compassGroup.add(compassBase);
+
+
+        // ==========================================
+        // 4. 核心物理計算與更新函式
+        // ==========================================
+        
+        /**
+         * 根據安培定律計算磁場向量 B
+         * B = (μ₀·I / 2π·r)
+         * 方向：根據安培右手定則，大拇指為 I，四指為 B (向量外積方向)
+         */
+        function calculateBField(x, y, I_mag, I_dir) {
+            const r = Math.sqrt(x*x + y*y);
+            if (r === 0) return { vec: new THREE.Vector3(0,0,0), mag: 0 };
+            
+            // 磁場強度 (距離衰減)
+            const B_mag = (MU_0_OVER_2PI * I_mag) / r;
+            
+            // 單位向量方向：位置向量 (x, y, 0) 逆時針旋轉 90 度為 (-y, x, 0)
+            const B_dir_vec = new THREE.Vector3(-y, x, 0).normalize();
+            
+            // 考慮電流方向 (+1 或 -1)
+            B_dir_vec.multiplyScalar(I_dir);
+            
+            return { vec: B_dir_vec, mag: B_mag };
+        }
+
+        /**
+         * 將磁場強度對應到顏色 (藍色->綠色->黃色->紅色)
+         */
+        function getColorByMagnitude(mag) {
+            // 設定基準最大值 (當 I=50, r=1.5 時約為 333)
+            const maxMag = 300; 
+            let normalized = Math.min(mag / maxMag, 1.0);
+            
+            // HSL 色相：240(藍) 到 0(紅)
+            const hue = (1.0 - normalized) * (240 / 360); 
+            const color = new THREE.Color();
+            color.setHSL(hue, 1.0, 0.5);
+            return color;
+        }
+
+        function updatePhysicsVisuals() {
+            // 1. 更新導線電流箭頭
+            const dirVec = new THREE.Vector3(0, 0, currentDirection);
+            currentArrow.setDirection(dirVec);
+            
+            if (currentMagnitude === 0) {
+                currentArrow.visible = false;
+            } else {
+                currentArrow.visible = true;
+                // 長度隨電流稍微變化
+                currentArrow.setLength(8 + (currentMagnitude/50)*12, 3, 2);
+            }
+
+            // 2. 更新磁力線箭頭方向
+            fieldArrows.forEach(obj => {
+                const x = obj.r * Math.cos(obj.theta);
+                const y = obj.r * Math.sin(obj.theta);
+                const B = calculateBField(x, y, currentMagnitude, currentDirection);
+                if (B.mag > 0) {
+                    obj.arrow.setDirection(B.vec);
+                    obj.arrow.visible = true;
+                } else {
+                    obj.arrow.visible = false;
+                }
+            });
+
+            // 3. 更新空間向量場 (距離衰減與顏色)
+            vectorArrows.forEach(obj => {
+                const B = calculateBField(obj.x, obj.y, currentMagnitude, currentDirection);
+                if (B.mag > 0) {
+                    obj.arrow.visible = true;
+                    obj.arrow.setDirection(B.vec);
+                    
+                    // 【物理現象展現】：距離越近，磁場越強 -> 箭頭越長、顏色越偏紅
+                    const color = getColorByMagnitude(B.mag);
+                    obj.arrow.setColor(color);
+                    
+                    // 根據強度縮放箭頭長度，但保持箭頭頭部寬度固定
+                    const scale = 0.5 + Math.min(B.mag / 100, 2.0); 
+                    const baseLength = 1.2;
+                    obj.arrow.setLength(baseLength * scale, 0.6, 0.4); 
+                } else {
+                    obj.arrow.visible = false;
+                }
+            });
+        }
+
+
+        // ==========================================
+        // 5. 事件監聽與 UI 控制綁定
+        // ==========================================
+        
+        document.getElementById('current-slider').addEventListener('input', (e) => {
+            currentMagnitude = parseFloat(e.target.value);
+            document.getElementById('current-val').innerText = currentMagnitude + " A";
+            updatePhysicsVisuals();
+        });
+
+        document.getElementById('current-dir').addEventListener('change', (e) => {
+            currentDirection = parseInt(e.target.value);
+            updatePhysicsVisuals();
+        });
+
+        document.getElementById('show-lines').addEventListener('change', (e) => {
+            showLines = e.target.checked;
+            fieldLinesGroup.visible = showLines;
+        });
+
+        document.getElementById('show-vec-z0').addEventListener('change', (e) => {
+            showVecZ0 = e.target.checked;
+            vectorFieldGroupZ0.visible = showVecZ0;
+        });
+
+        document.getElementById('show-vec-zall').addEventListener('change', (e) => {
+            showVecZAll = e.target.checked;
+            vectorFieldGroupZOther.visible = showVecZAll;
+        });
+
+        document.getElementById('interactive-compass').addEventListener('change', (e) => {
+            isCompassActive = e.target.checked;
+            compassGroup.visible = false; 
+            document.getElementById('tooltip').style.display = 'none';
+        });
+
+        document.getElementById('compass-polarity').addEventListener('change', (e) => {
+            compassPolarity = e.target.value === 'N' ? 1 : -1;
+        });
+
+        // 螢幕響應式縮放
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // ==========================================
+        // 6. 滑鼠互動 (Raycaster 實現及時指針與數值檢視)
+        // ==========================================
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        const tooltip = document.getElementById('tooltip');
+        // 建立 Z=0 虛擬平面供射線碰撞測試
+        const planeZ0 = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+        const intersectPoint = new THREE.Vector3();
+
+        window.addEventListener('pointermove', (e) => {
+            if (!isCompassActive) return;
+
+            // 轉換滑鼠座標為 NDC (-1 ~ +1)
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            
+            // 偵測與 Z=0 平面的交點
+            if (raycaster.ray.intersectPlane(planeZ0, intersectPoint)) {
+                const r = Math.sqrt(intersectPoint.x**2 + intersectPoint.y**2);
+                
+                // 避免滑鼠進入導線內部造成數值爆表
+                if (r < 0.6) {
+                    compassGroup.visible = false;
+                    tooltip.style.display = 'none';
+                    return;
+                }
+
+                compassGroup.visible = true;
+                compassGroup.position.copy(intersectPoint);
+
+                // 計算該點磁場
+                const B = calculateBField(intersectPoint.x, intersectPoint.y, currentMagnitude, currentDirection);
+
+                if (B.mag > 0) {
+                    // 指針旋轉對齊磁場：若是指南針(S)，方向反轉
+                    const dir = B.vec.clone().multiplyScalar(compassPolarity);
+                    
+                    // ConeGeometry 預設頂部朝向 +Y 軸
+                    const defaultUp = new THREE.Vector3(0, 1, 0); 
+                    const quaternion = new THREE.Quaternion().setFromUnitVectors(defaultUp, dir);
+                    compassGroup.setRotationFromQuaternion(quaternion);
+                }
+
+                // 更新 Tooltip (顯示特定點數值)
+                tooltip.style.display = 'block';
+                tooltip.style.left = (e.clientX + 15) + 'px';
+                tooltip.style.top = (e.clientY + 15) + 'px';
+                tooltip.innerHTML = `
+                    <div style="font-weight:bold; margin-bottom:4px; border-bottom:1px solid #00ffcc; padding-bottom:4px;">偵測點數據</div>
+                    座標 (X, Y): (${intersectPoint.x.toFixed(1)}, ${intersectPoint.y.toFixed(1)})<br>
+                    距中心 (r): ${r.toFixed(2)} m<br>
+                    磁場強度 (B): <span style="color:#fff;">${B.mag.toFixed(1)} μT</span>
+                `;
+            } else {
+                compassGroup.visible = false;
+                tooltip.style.display = 'none';
+            }
+        });
+
+
+        // ==========================================
+        // 7. 動畫渲染迴圈
+        // ==========================================
+        updatePhysicsVisuals();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update(); // 平滑阻尼更新
+            renderer.render(scene, camera);
+        }
+        animate();
+
+    </script>
+</body>
+</html>
