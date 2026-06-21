@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>電流磁效應三組教學實驗入口</title>
+  <style>
+    :root { --bg:#0f172a; --card:#111827; --line:#334155; --text:#e5e7eb; --muted:#94a3b8; --accent:#38bdf8; --yellow:#fbbf24; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; font-family:"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif; color:var(--text); background:linear-gradient(135deg,#020617,#0f172a 45%,#111827); }
+    main { max-width:1100px; margin:0 auto; padding:48px 20px; }
+    .hero { text-align:center; margin-bottom:28px; }
+    h1 { margin:0 0 12px; font-size:clamp(2rem,4vw,3.5rem); letter-spacing:.04em; }
+    .subtitle { color:var(--muted); font-size:1.05rem; line-height:1.8; }
+    .notice { border:1px solid var(--line); background:rgba(15,23,42,.75); border-radius:18px; padding:18px 20px; margin:24px 0; line-height:1.8; }
+    .input-row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; justify-content:center; margin:24px 0 32px; }
+    label { color:#cbd5e1; font-weight:700; }
+    input { width:min(360px,100%); padding:12px 14px; border-radius:12px; border:1px solid var(--line); background:#020617; color:var(--text); font-size:1rem; }
+    .cards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; }
+    .card { border:1px solid var(--line); background:rgba(17,24,39,.88); border-radius:22px; padding:24px; display:flex; flex-direction:column; min-height:290px; box-shadow:0 18px 45px rgba(0,0,0,.28); }
+    .tag { color:var(--yellow); font-weight:800; letter-spacing:.04em; }
+    h2 { margin:10px 0 12px; font-size:1.35rem; }
+    .card p { color:#cbd5e1; line-height:1.75; flex:1; }
+    button { border:0; border-radius:14px; padding:13px 16px; cursor:pointer; font-weight:900; font-size:1rem; color:#082f49; background:var(--accent); transition:.15s; }
+    button:hover { transform:translateY(-1px); filter:brightness(1.08); }
+    footer { margin-top:36px; color:var(--muted); line-height:1.7; font-size:.95rem; }
+    @media (max-width:850px){ .cards{grid-template-columns:1fr;} }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <h1>電流磁效應三組教學實驗</h1>
+      <div class="subtitle">流程：組別說明 → 前測 → 三段教學 → 後測 → 完成頁</div>
+    </section>
+
+    <section class="notice">
+      本入口頁只負責分組與流程控制。正式教學內容會依照組別進入不同素材：
+      Group 1 為模擬加文字，Group 2 為模擬加文字加旁白，Group 3 為動畫或影片加旁白。
+      請先輸入學生代號，再選擇指定組別。
+    </section>
+
+    <div class="input-row">
+      <label for="studentId">學生代號</label>
+      <input id="studentId" placeholder="例如：S001 或班級座號" />
+    </div>
+
+    <section class="cards">
+      <article class="card">
+        <div class="tag">GROUP 1</div>
+        <h2>simulation + 文字</h2>
+        <p>學生透過 3D 模擬操作，搭配畫面上的文字操作指引完成三段教學。</p>
+        <button onclick="startGroup(1)">進入 Group 1</button>
+      </article>
+      <article class="card">
+        <div class="tag">GROUP 2</div>
+        <h2>simulation + 文字 + 旁白</h2>
+        <p>學生透過相同 3D 模擬操作，並搭配文字與語音旁白指引完成三段教學。</p>
+        <button onclick="startGroup(2)">進入 Group 2</button>
+      </article>
+      <article class="card">
+        <div class="tag">GROUP 3</div>
+        <h2>animation + 旁白</h2>
+        <p>學生觀看動畫或影片形式的教學素材，依序完成三段主題學習。</p>
+        <button onclick="startGroup(3)">進入 Group 3</button>
+      </article>
+    </section>
+
+    <footer>
+      建議以本機伺服器開啟：在資料夾內執行 <code>python -m http.server 8000</code>，再開啟 <code>http://localhost:8000/index.html</code>。
+    </footer>
+  </main>
+  <script>
+    function startGroup(group){
+      const id = document.getElementById('studentId').value.trim();
+      if(!id){ alert('請先輸入學生代號'); return; }
+      location.href = `run.html?group=${group}&id=${encodeURIComponent(id)}`;
+    }
+  </script>
+</body>
+</html>
